@@ -38,6 +38,7 @@ class GPUPIXEL_API GPUPixelContext {
   void runSync(std::function<void(void)> func);
   void runAsync(std::function<void(void)> func);
   void useAsCurrent(void);
+  void unUseCurrent(void);
   void presentBufferForDisplay();
  
 #if defined(GPUPIXEL_IOS)
@@ -55,6 +56,7 @@ class GPUPIXEL_API GPUPixelContext {
   unsigned char* capturedFrameData;
   int captureWidth;
   int captureHeight;
+  bool isContextBound;
 
  private:
   GPUPixelContext();

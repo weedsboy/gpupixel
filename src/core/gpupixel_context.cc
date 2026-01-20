@@ -97,7 +97,8 @@ GPUPixelContext::GPUPixelContext()
     : _curShaderProgram(0),
       isCapturingFrame(false),
       captureUpToFilter(0),
-      capturedFrameData(0) {
+      capturedFrameData(0),
+      isContextBound(false) {
   _framebufferFactory = new FramebufferFactory();
   task_queue_ = std::make_shared<DispatchQueue>();
   init();
@@ -142,7 +143,11 @@ FramebufferFactory* GPUPixelContext::getFramebufferFactory() const {
 void GPUPixelContext::setActiveShaderProgram(GPUPixelGLProgram* shaderProgram) {
   if (_curShaderProgram != shaderProgram) {
     _curShaderProgram = shaderProgram;
-    shaderProgram->use();
+    if (shaderProgram) {
+        shaderProgram->use();
+    } else {
+        glUseProgram(0);
+    }
   }
 }
 
@@ -301,6 +306,26 @@ void GPUPixelContext::useAsCurrent() {
     glfwMakeContextCurrent(gl_context_);
   }
 #endif
+  isContextBound = true;
+}
+
+void GPUPixelContext::unUseCurrent() {
+#if defined(GPUPIXEL_IOS)
+  if ([EAGLContext currentContext] == _eglContext) {
+      [EAGLContext setCurrentContext:nil];
+  }
+#elif defined(GPUPIXEL_MAC)
+  if ([NSOpenGLContext currentContext] == imageProcessingContext) {
+      [NSOpenGLContext clearCurrentContext];
+  }
+#elif defined(GPUPIXEL_ANDROID)
+  eglMakeCurrent(m_gpu_context->egldisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+#elif defined(GPUPIXEL_WIN) || defined(GPUPIXEL_LINUX)
+  if (glfwGetCurrentContext() == gl_context_) {
+      glfwMakeContextCurrent(NULL);
+  }
+#endif
+  isContextBound = false;
 }
 
 void GPUPixelContext::presentBufferForDisplay() {
@@ -353,6 +378,7 @@ void GPUPixelContext::runSync(std::function<void(void)> func) {
   task_queue_->runSync([=]() {
       useAsCurrent();
       func();
+      unUseCurrent();
   });
 #endif
 
