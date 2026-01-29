@@ -5,12 +5,26 @@
 #include <iostream>
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
+#include "ghc/filesystem.hpp"
+
+namespace fs {
+using namespace ghc::filesystem;
+using ifstream = ghc::filesystem::ifstream;
+using ofstream = ghc::filesystem::ofstream;
+using fstream = ghc::filesystem::fstream;
+}  // namespace fs
 
 #ifdef _WIN32
 #include <Shlwapi.h>
 #include <delayimp.h>
 #include <windows.h>
 #pragma comment(lib, "Shlwapi.lib")
+#elif defined(__linux__)
+#include <limits.h>
+#include <unistd.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#include <stdlib.h>
 #endif
 
 #include "gpupixel/gpupixel.h"
@@ -39,6 +53,47 @@ float blusher_strength_ = 0.0f;
 
 // GLFW window handle
 GLFWwindow* main_window_ = nullptr;
+
+// Get executable path
+std::string GetExecutablePath() {
+  std::string path;
+#ifdef _WIN32
+  // Windows 平台实现
+  char buffer[MAX_PATH];
+  GetModuleFileNameA(NULL, buffer, MAX_PATH);
+  PathRemoveFileSpecA(buffer);
+  path = buffer;
+#elif defined(__APPLE__)
+  // macOS 平台实现
+  char buffer[PATH_MAX];
+  uint32_t size = sizeof(buffer);
+  if (_NSGetExecutablePath(buffer, &size) == 0) {
+    char realPath[PATH_MAX];
+    if (realpath(buffer, realPath)) {
+      path = realPath;
+      // 移除文件名部分，只保留目录
+      size_t pos = path.find_last_of("/\\");
+      if (pos != std::string::npos) {
+        path = path.substr(0, pos);
+      }
+    }
+  }
+#elif defined(__linux__)
+  // Linux 平台实现
+  char buffer[PATH_MAX];
+  ssize_t count = readlink("/proc/self/exe", buffer, PATH_MAX);
+  if (count != -1) {
+    buffer[count] = '\0';
+    path = buffer;
+    // 移除文件名部分，只保留目录
+    size_t pos = path.find_last_of("/\\");
+    if (pos != std::string::npos) {
+      path = path.substr(0, pos);
+    }
+  }
+#endif
+  return path;
+}
 
 // Check shader compilation/linking errors
 bool CheckShaderErrors(GLuint shader, const char* type) {
@@ -86,19 +141,17 @@ bool SetupGlfwWindow() {
     return false;
   }
 
-  // 检测平台并适配OpenGL版本设置
+  // Detect platform and adapt OpenGL version settings
 #ifdef __APPLE__
-  // macOS需要使用Core Profile和较高版本的OpenGL
+  // macOS requires Core Profile and higher version of OpenGL
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 #else
-  // Linux(Ubuntu)平台使用兼容性更好的配置
+  // Linux(Ubuntu) platform uses more compatible configuration
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-  // 不指定Profile，使用兼容模式
-  // glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_ANY_PROFILE);
 #endif
 
   glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
@@ -135,12 +188,12 @@ void SetupImGui() {
   ImGui::StyleColorsDark();
   ImGui_ImplGlfw_InitForOpenGL(main_window_, true);
 
-  // 根据平台选择合适的GLSL版本
+  // Select appropriate GLSL version based on platform
 #ifdef __APPLE__
-  // macOS使用GLSL 3.3版本以匹配Core Profile
+  // Use GLSL 3.3 version for macOS Core Profile
   const char* glsl_version = "#version 330 core";
 #else
-  // Linux(Ubuntu)使用兼容性更好的GLSL 1.30版本
+  // Use more compatible GLSL 1.30 version for Linux(Ubuntu)
   const char* glsl_version = "#version 130";
 #endif
   ImGui_ImplOpenGL3_Init(glsl_version);
@@ -148,7 +201,10 @@ void SetupImGui() {
 
 // Initialize GPUPixel filters and pipeline
 void SetupFilterPipeline() {
-  GPUPixel::SetResourceRoot("../");
+  auto resource_path = fs::path(GetExecutablePath()).parent_path();
+  std::cout << "[App] Current resource path: " << resource_path << std::endl;
+  GPUPixel::SetResourcePath(resource_path.string());
+
   // Create filters
   lipstick_filter_ = LipstickFilter::Create();
   blusher_filter_ = BlusherFilter::Create();
@@ -160,7 +216,7 @@ void SetupFilterPipeline() {
 #endif
 
   // Create source image and sink raw data
-  source_image_ = SourceImage::Create("demo.png");
+  source_image_ = SourceImage::Create(GetExecutablePath() + "/demo.png");
   sink_raw_data_ = SinkRawData::Create();
 
   // Build filter pipeline
@@ -224,15 +280,15 @@ void RenderRGBAToScreen(const uint8_t* rgba_data, int width, int height) {
     return;
   }
 
-  // 获取当前窗口大小用于视口设置
+  // Get current window size for viewport settings
   int window_width, window_height;
   glfwGetFramebufferSize(main_window_, &window_width, &window_height);
 
-  // 渲染RGBA数据到屏幕
+  // Render RGBA data to screen
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
   glViewport(0, 0, window_width, window_height);
 
-  // 注意：不要在这里清除帧缓冲区，否则会覆盖ImGui的渲染
+  // Note: Don't clear framebuffer here, or it will overwrite ImGui rendering
   // glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
   // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -245,9 +301,9 @@ void RenderRGBAToScreen(const uint8_t* rgba_data, int width, int height) {
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
                GL_UNSIGNED_BYTE, rgba_data);
 
-  // 根据平台使用适合的着色器代码
+  // Use appropriate shader code based on platform
 #ifdef __APPLE__
-  // macOS使用330核心版本
+  // macOS uses 330 core version
   const char* vertexShaderSource = R"(
     #version 330 core
     layout (location = 0) in vec3 aPos;
@@ -269,7 +325,7 @@ void RenderRGBAToScreen(const uint8_t* rgba_data, int width, int height) {
     }
   )";
 #else
-  // Linux(Ubuntu)使用更兼容的130版本
+  // Linux(Ubuntu) uses more compatible 130 version
   const char* vertexShaderSource = R"(
     #version 130
     attribute vec3 aPos;
@@ -394,16 +450,16 @@ void RenderRGBAToScreen(const uint8_t* rgba_data, int width, int height) {
 
 // Render a single frame
 void RenderFrame() {
-  // 清除帧缓冲区
+  // Clear the framebuffer
   glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT);
 
-  // 开始ImGui帧
+  // Start ImGui frame
   ImGui_ImplOpenGL3_NewFrame();
   ImGui_ImplGlfw_NewFrame();
   ImGui::NewFrame();
 
-  // 更新过滤器参数
+  // Update filter parameters
   UpdateFilterParametersFromUI();
 
   int width = source_image_->GetWidth();
@@ -411,7 +467,7 @@ void RenderFrame() {
   const unsigned char* buffer = source_image_->GetRgbaImageBuffer();
 
 #ifdef GPUPIXEL_ENABLE_FACE_DETECTOR
-  // 检测人脸特征点
+  // Detect facial landmarks
   std::vector<float> landmarks = face_detector_->Detect(
       buffer, width, height, width * 4, GPUPIXEL_MODE_FMT_PICTURE,
       GPUPIXEL_FRAME_TYPE_RGBA);
@@ -423,22 +479,22 @@ void RenderFrame() {
   }
 #endif
 
-  // 处理图像
+  // Process image
   source_image_->Render();
 
-  // 获取处理后的RGBA数据
+  // Get processed RGBA data
   const uint8_t* rgba_data = sink_raw_data_->GetRgbaBuffer();
   width = sink_raw_data_->GetWidth();
   height = sink_raw_data_->GetHeight();
 
-  // 渲染RGBA数据到屏幕
+  // Render RGBA data to screen
   RenderRGBAToScreen(rgba_data, width, height);
 
-  // 渲染ImGui
+  // Render ImGui
   ImGui::Render();
   ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-  // 交换缓冲区并轮询事件
+  // Swap buffers and poll events
   glfwSwapBuffers(main_window_);
   glfwPollEvents();
 }
@@ -460,13 +516,10 @@ void CleanupResources() {
 
 int main() {
 #ifdef _WIN32
-  // 设置DLL搜索路径
-  char exePath[MAX_PATH];
-  GetModuleFileNameA(NULL, exePath, MAX_PATH);
-  PathRemoveFileSpecA(exePath);
-
+  // Set DLL search path
+  std::string exePath = GetExecutablePath();
   char dllDir[MAX_PATH];
-  sprintf_s(dllDir, MAX_PATH, "%s\\..\\lib", exePath);
+  sprintf_s(dllDir, MAX_PATH, "%s\\..\\lib", exePath.c_str());
   SetDllDirectoryA(dllDir);
 #endif
 

@@ -9,8 +9,9 @@
 #import <AVFoundation/AVFoundation.h>
 #include "core/gpupixel_context.h"
 #include "core/gpupixel_program.h"
-#include "gpupixel/filter/filter.h"
 #include "utils/util.h"
+
+using namespace gpupixel;
 
 @interface ObjcView () {
   std::shared_ptr<gpupixel::GPUPixelFramebuffer> inputFramebuffer;
@@ -63,17 +64,17 @@
 {
   inputRotation = gpupixel::NoRotation;
 #if defined(GPUPIXEL_IOS)
-  self.opaque = YES;
+  self.opaque = NO;
   self.hidden = NO;
   CAEAGLLayer* eaglLayer = (CAEAGLLayer*)self.layer;
-  eaglLayer.opaque = YES;
+  eaglLayer.opaque = NO;
   eaglLayer.drawableProperties = [NSDictionary
       dictionaryWithObjectsAndKeys:[NSNumber numberWithBool:NO],
                                    kEAGLDrawablePropertyRetainedBacking,
                                    kEAGLColorFormatRGBA8,
                                    kEAGLDrawablePropertyColorFormat, nil];
   currentlayer = (CAEAGLLayer*)self.layer;
-  currentlayer.opaque = YES;
+  currentlayer.opaque = NO;
   currentlayer.drawableProperties = [NSDictionary
       dictionaryWithObjectsAndKeys:[NSNumber numberWithBool:NO],
                                    kEAGLDrawablePropertyRetainedBacking,
@@ -170,9 +171,7 @@
     glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_HEIGHT,
                                  &framebufferHeight);
 
-    [self performSelectorOnMainThread:@selector(updateDisplayVertices)
-                           withObject:nil
-                        waitUntilDone:NO];
+    [self updateDisplayVertices];
 #else
     // Perhaps I'll use an FBO at some time later, but for now will render
     // directly to the screen
@@ -212,8 +211,8 @@
   }
 
   gpupixel::GPUPixelContext::GetInstance()->SyncRunWithContext([&] {
-    glBindFramebuffer(GL_FRAMEBUFFER, displayFramebuffer);
-    glViewport(0, 0, framebufferWidth, framebufferHeight);
+      glBindFramebuffer(GL_FRAMEBUFFER, displayFramebuffer);
+      glViewport(0, 0, framebufferWidth, framebufferHeight);
   });
 #else
   gpupixel::GPUPixelContext::GetInstance()->SyncRunWithContext([&] {
@@ -256,36 +255,26 @@
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 #if defined(GPUPIXEL_MAC)
     // Re-render onscreen, flipped to a normal orientation
-    CHECK_GL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
-    CHECK_GL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
+    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+    GL_CALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
 #endif
-    CHECK_GL(glActiveTexture(GL_TEXTURE0));
-    CHECK_GL(glBindTexture(GL_TEXTURE_2D, inputFramebuffer->GetTexture()));
-    CHECK_GL(glUniform1i(colorMapUniformLocation, 0));
+    GL_CALL(glActiveTexture(GL_TEXTURE0));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, inputFramebuffer->GetTexture()));
+    GL_CALL(glUniform1i(colorMapUniformLocation, 0));
 
-    CHECK_GL(glVertexAttribPointer(positionAttribLocation, 2, GL_FLOAT, 0, 0,
-                                   displayVertices));
-    CHECK_GL(glVertexAttribPointer(
+    GL_CALL(glVertexAttribPointer(positionAttribLocation, 2, GL_FLOAT, 0, 0,
+                                  displayVertices));
+    GL_CALL(glVertexAttribPointer(
         texCoordAttribLocation, 2, GL_FLOAT, 0, 0,
         [self textureCoordinatesForRotation:inputRotation]));
 #if defined(GPUPIXEL_IOS)
-    CHECK_GL(glDrawArrays(GL_TRIANGLE_STRIP, 0, 4));
+    GL_CALL(glDrawArrays(GL_TRIANGLE_STRIP, 0, 4));
     [self presentFramebuffer];
 #else
-    BOOL canLockFocus = YES;
-    if ([self respondsToSelector:@selector(lockFocusIfCanDraw)]) {
-      canLockFocus = [self lockFocusIfCanDraw];
-    } else {
-      [self lockFocus];
-    }
-
-    if (canLockFocus) {
-      CHECK_GL(glDrawArrays(GL_TRIANGLE_STRIP, 0, 4));
-
-      [self presentFramebuffer];
-      CHECK_GL(glBindTexture(GL_TEXTURE_2D, 0));
-      [self unlockFocus];
-    }
+    [[self openGLContext] makeCurrentContext];
+    GL_CALL(glDrawArrays(GL_TRIANGLE_STRIP, 0, 4));
+    [self presentFramebuffer];
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
 #endif
   });
 }
@@ -293,7 +282,7 @@
 - (void)SetInputFramebuffer:
             (std::shared_ptr<gpupixel::GPUPixelFramebuffer>)newInputFramebuffer
                withRotation:(gpupixel::RotationMode)rotation
-                    atIndex:(NSInteger)texIdx {
+                    atIndex:(int)texIdx {
   std::shared_ptr<gpupixel::GPUPixelFramebuffer> lastFramebuffer =
       inputFramebuffer;
   gpupixel::RotationMode lastInputRotation = inputRotation;
@@ -306,9 +295,7 @@
        !(lastFramebuffer->GetWidth() == newInputFramebuffer->GetWidth() &&
          lastFramebuffer->GetHeight() == newInputFramebuffer->GetHeight() &&
          lastInputRotation == rotation))) {
-    [self performSelectorOnMainThread:@selector(updateDisplayVertices)
-                           withObject:nil
-                        waitUntilDone:NO];
+    [self updateDisplayVertices];
   }
 }
 
@@ -412,6 +399,14 @@
     case gpupixel::Rotate180:
       return rotate180TextureCoordinates;
   }
+}
+
+- (BOOL)IsReady {
+  return (inputFramebuffer != nullptr);
+}
+
+- (void)unPrepared {
+  inputFramebuffer = nullptr;
 }
 
 @end

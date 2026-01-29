@@ -1,5 +1,16 @@
-# 定义项目名称并初始化项目
+# Define project name and initialize project
 set(gpupixel_libs_name "gpupixel")
+
+# Add compilation options to suppress OpenGL deprecation warnings
+if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin" OR ${CMAKE_SYSTEM_NAME} MATCHES "iOS")
+  add_compile_definitions(GL_SILENCE_DEPRECATION)
+  add_compile_definitions(GLES_SILENCE_DEPRECATION)
+endif()
+
+# add neon support
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mfpu=neon")
+endif()
 
 # index file
 set(common_source_files
@@ -12,7 +23,11 @@ set(common_source_files
     ${CMAKE_CURRENT_SOURCE_DIR}/source/source_raw_data.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/source/source_image.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/sink/sink_raw_data.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/sink/sink_raw_data_yuv.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/sink/sink_render.cc
+#if defined(GPUPIXEL_ANDROID)
+    ${CMAKE_CURRENT_SOURCE_DIR}/sink/sink_surface.cc
+#endif
     ${CMAKE_CURRENT_SOURCE_DIR}/sink/sink.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/utils/math_toolbox.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/utils/dispatch_queue.cc
@@ -66,7 +81,7 @@ set(common_source_files
     ${CMAKE_CURRENT_SOURCE_DIR}/filter/white_balance_filter.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/filter/smooth_toon_filter.cc)
 
-# 根据选项添加人脸检测源文件
+# Add face detection source files based on options
 if(GPUPIXEL_ENABLE_FACE_DETECTOR)
   list(APPEND common_source_files
        ${CMAKE_CURRENT_SOURCE_DIR}/face_detector/face_detector.cc)
@@ -84,14 +99,15 @@ set(jni_source_files
     ${CMAKE_CURRENT_SOURCE_DIR}/android/jni/jni_helpers.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/android/jni/jni_source_image.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/android/jni/jni_face_detector.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/android/jni/jni_sink_raw_data.cc)
+    ${CMAKE_CURRENT_SOURCE_DIR}/android/jni/jni_sink_raw_data.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/android/jni/jni_sink_raw_yuv.cc)
 
 set(lib_source_code_files ${common_source_files})
 
-if(${CURRENT_PLAT} STREQUAL ${PLAT_ANDROID})
+if(${CMAKE_SYSTEM_NAME} MATCHES "Android")
   list(APPEND lib_source_code_files ${jni_source_files})
-elseif(${CURRENT_PLAT} STREQUAL ${PLAT_MAC} OR ${CURRENT_PLAT} STREQUAL
-                                               ${PLAT_IOS})
+elseif(${CMAKE_SYSTEM_NAME} MATCHES "Darwin" OR ${CMAKE_SYSTEM_NAME} MATCHES
+                                                "iOS")
   list(APPEND lib_source_code_files ${objc_source_files})
 endif()
 
@@ -100,7 +116,7 @@ set(public_common_header_files
     ${PROJECT_SOURCE_DIR}/include/gpupixel/gpupixel.h
     ${PROJECT_SOURCE_DIR}/include/gpupixel/gpupixel_define.h)
 
-# 根据选项添加人脸检测头文件
+# Add face detection header files based on options
 if(GPUPIXEL_ENABLE_FACE_DETECTOR)
   set(public_face_detector_header_files
       ${PROJECT_SOURCE_DIR}/include/gpupixel/face_detector/face_detector.h)
@@ -201,10 +217,10 @@ set(lib_header_code_files
     ${internal_objc_sink_header_files}
     ${internal_utils_header_files})
 
-if(${CURRENT_PLAT} STREQUAL ${PLAT_ANDROID})
+if(${CMAKE_SYSTEM_NAME} MATCHES "Android")
   list(APPEND lib_header_code_files ${internal_jni_header_files})
-elseif(${CURRENT_PLAT} STREQUAL ${PLAT_MAC} OR ${CURRENT_PLAT} STREQUAL
-                                               ${PLAT_IOS})
+elseif(${CMAKE_SYSTEM_NAME} MATCHES "Darwin" OR ${CMAKE_SYSTEM_NAME} MATCHES
+                                                "iOS")
   list(APPEND lib_header_code_files ${public_objc_sink_header_files})
 endif()
 
@@ -268,7 +284,7 @@ if(GPUPIXEL_AAPL_FMWK)
   endforeach()
 endif()
 
-# 库配置
+# Library configuration
 # ##############################################################################
 
 if(GPUPIXEL_BUILD_SHARED_LIBS)
@@ -283,36 +299,46 @@ else()
     ${lib_image_resource_files} ${lib_models_resource_files})
 endif()
 
+add_library(gpupixel::gpupixel ALIAS ${gpupixel_libs_name})
+
+set_target_properties(
+  ${gpupixel_libs_name} PROPERTIES POSITION_INDEPENDENT_CODE ON
+                                   FOLDER ${gpupixel_libs_name})
+
 target_include_directories(
   ${gpupixel_libs_name} PUBLIC ${PROJECT_SOURCE_DIR}/include
                                ${CMAKE_CURRENT_SOURCE_DIR})
 
 if(WIN32 AND GPUPIXEL_BUILD_SHARED_LIBS)
-  # Windows动态库导出宏定义
+  # Windows DLL export macro definition
   target_compile_definitions(${gpupixel_libs_name}
                              PRIVATE -DBUILDING_GPUPIXEL_DLL)
 
 elseif(NOT WIN32)
-  # 非Windows平台使用编译器可见性属性
+  # Non-Windows platforms use compiler visibility attributes
   set(CMAKE_C_VISIBILITY_PRESET hidden)
   set(CMAKE_CXX_VISIBILITY_PRESET hidden)
   set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 
-  # Release模式强制隐藏符号
+  # Force symbol hiding in Release mode
   if(NOT CMAKE_BUILD_TYPE MATCHES Debug)
     target_compile_options(
       ${gpupixel_libs_name} PRIVATE -fvisibility=hidden
                                     -fvisibility-inlines-hidden)
   endif()
 
-  # 保留Objective-C符号可见性
+  # Preserve Objective-C symbol visibility
   set_target_properties(
     ${gpupixel_libs_name} PROPERTIES OBJCXX_VISIBILITY_PRESET default
                                      OBJC_VISIBILITY_PRESET default)
 endif()
 
+if(GPUPIXEL_EXTERNAL_CODE)
+  target_compile_definitions(${gpupixel_libs_name} PRIVATE GPUPIXEL_EXTERNAL_CODE)
+endif()
+
 if(WIN32)
-  # Windows字符集配置
+  # Windows character set configuration
   add_compile_options("$<$<C_COMPILER_ID:MSVC>:/utf-8>")
   add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL$<$<CONFIG:Debug>:Debug>")
@@ -326,6 +352,7 @@ endif()
 if(APPLE)
   set_target_properties(${gpupixel_libs_name} PROPERTIES COMPILE_FLAGS
                                                          "-x objective-c++")
+  target_compile_options(${gpupixel_libs_name} PRIVATE "-fobjc-arc")
 
   if(GPUPIXEL_AAPL_FMWK)
     set(APPLE_FRAMEWORK_NAME ${gpupixel_libs_name})
@@ -344,43 +371,32 @@ if(APPLE)
                  "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
                  XCODE_ATTRIBUTE_GCC_SYMBOLS_PRIVATE_EXTERN NO)
 
-    if(${CURRENT_PLAT} STREQUAL ${PLAT_IOS})
-      set(APPLE_DEPLOYMENT_TARGET "11.0")
-      set_target_properties(
-        ${gpupixel_libs_name} PROPERTIES IPHONEOS_DEPLOYMENT_TARGET
-                                         ${APPLE_DEPLOYMENT_TARGET})
-    endif()
-
-    if(${CURRENT_PLAT} STREQUAL ${PLAT_MAC})
-      set(APPLE_DEPLOYMENT_TARGET "10.15")
-      set_target_properties(
-        ${gpupixel_libs_name} PROPERTIES MACOSX_DEPLOYMENT_TARGET
-                                         ${APPLE_DEPLOYMENT_TARGET})
-    endif()
+    # add ad-hoc signing for framework
+    add_custom_command(
+      TARGET ${gpupixel_libs_name}
+      POST_BUILD
+      COMMAND codesign --force --sign -
+              "$<TARGET_FILE_DIR:${gpupixel_libs_name}>"
+      COMMENT
+        "Ad-Hoc signing with deep option completed for ${gpupixel_libs_name}.framework"
+    )
   endif()
 endif()
 
-# 链接库依赖
-# ##############################################################################
-# Linux平台依赖
-if(${CURRENT_PLAT} STREQUAL ${PLAT_LINUX})
-  target_link_libraries(${gpupixel_libs_name} PRIVATE GL marsface yuv glad glfw
-                                                      stb)
-
-  # Windows平台依赖
-elseif(${CURRENT_PLAT} STREQUAL ${PLAT_WIN})
+# Library dependencies Linux platform dependencies
+if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   target_link_libraries(
-    ${gpupixel_libs_name}
-    PRIVATE opengl32
-            glfw
-            marsface
-            yuv
-            glad
-            glfw
-            stb)
+    ${gpupixel_libs_name} PRIVATE GL libyuv::yuv stb::stb
+                                  glad::glad glfw::glfw)
 
-  # macOS平台依赖
-elseif(${CURRENT_PLAT} STREQUAL ${PLAT_MAC})
+  # Windows platform dependencies
+elseif(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+  target_link_libraries(
+    ${gpupixel_libs_name} PRIVATE opengl32 glfw::glfw libyuv::yuv glad::glad
+                                  stb::stb ghc::filesystem)
+
+  # macOS platform dependencies
+elseif(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
   target_link_libraries(
     ${gpupixel_libs_name}
     PRIVATE "-framework OpenGL"
@@ -391,13 +407,12 @@ elseif(${CURRENT_PLAT} STREQUAL ${PLAT_MAC})
             "-framework AVFoundation"
             "-framework CoreMedia"
             "-framework Metal"
-            mnn
-            marsface
-            yuv
-            stb)
+            libyuv::yuv
+            stb::stb
+            ghc::filesystem)
 
-  # iOS平台依赖
-elseif(${CURRENT_PLAT} STREQUAL ${PLAT_IOS})
+  # iOS platform dependencies
+elseif(${CMAKE_SYSTEM_NAME} MATCHES "iOS")
   target_link_libraries(
     ${gpupixel_libs_name}
     PRIVATE "-framework Foundation"
@@ -410,13 +425,12 @@ elseif(${CURRENT_PLAT} STREQUAL ${PLAT_IOS})
             "-framework CoreMedia"
             "-framework Metal"
             "-framework CoreML"
-            mnn
-            marsface
-            yuv
-            stb)
+            libyuv::yuv
+            stb::stb
+            ghc::filesystem)
 
-  # Android平台依赖
-elseif(${CURRENT_PLAT} STREQUAL ${PLAT_ANDROID})
+  # Android platform dependencies
+elseif(${CMAKE_SYSTEM_NAME} MATCHES "Android")
   target_link_libraries(
     ${gpupixel_libs_name}
     PRIVATE log
@@ -424,57 +438,54 @@ elseif(${CURRENT_PLAT} STREQUAL ${PLAT_ANDROID})
             GLESv3
             EGL
             jnigraphics
-            marsface
-            yuv
-            stb)
+            libyuv::yuv
+            stb::stb
+            ghc::filesystem
+ 			"-Wl,-z,max-page-size=16384"
+            "-Wl,-z,common-page-size=16384")
+elseif(${CMAKE_SYSTEM_NAME} MATCHES "Emscripten")
+  target_link_libraries(${gpupixel_libs_name} PRIVATE libyuv::yuv stb::stb
+                                                      ghc::filesystem)
 endif()
 
-# install header
+if(GPUPIXEL_ENABLE_FACE_DETECTOR)
+  target_link_libraries(${gpupixel_libs_name} PRIVATE marsface::marsface)
+  if(APPLE)
+    target_link_libraries(${gpupixel_libs_name} PRIVATE mnn)
+  endif()
+endif()
 
-install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/ DESTINATION include)
+if(GPUPIXEL_INSTALL)
+  # install header
+  install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/ DESTINATION include)
 
-if(GPUPIXEL_AAPL_FMWK)
-  foreach(hdr ${filter_header_files})
-    set_source_files_properties(${hdr} PROPERTIES MACOSX_PACKAGE_LOCATION
-                                                  Headers/filter)
-  endforeach()
+  # install library
+  install(
+    TARGETS ${gpupixel_libs_name}
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION lib # win dll install lib
+    FRAMEWORK DESTINATION lib)
 
+  # install image resource
+  install(
+    FILES ${lib_image_resource_files}
+    DESTINATION res
+    COMPONENT resource)
+
+  # install model resource
+  install(
+    FILES ${lib_models_resource_files}
+    DESTINATION models
+    COMPONENT resource)
+
+  # install image resource
   foreach(image ${lib_image_resource_files})
-    set_source_files_properties(${image} PROPERTIES MACOSX_PACKAGE_LOCATION
-                                                    Resources/res)
+    file(COPY ${image} DESTINATION ${BUILD_OUTPUT_DIR}/res)
   endforeach()
 
+  # install model resource
   foreach(model ${lib_models_resource_files})
-    set_source_files_properties(${model} PROPERTIES MACOSX_PACKAGE_LOCATION
-                                                    Resources/models)
+    file(COPY ${model} DESTINATION ${BUILD_OUTPUT_DIR}/models)
   endforeach()
-
-  # add ad-hoc signing for framework
-  add_custom_command(
-    TARGET ${gpupixel_libs_name}
-    POST_BUILD
-    COMMAND codesign --force --sign - "$<TARGET_FILE_DIR:${gpupixel_libs_name}>"
-    COMMENT
-      "Ad-Hoc signing with deep option completed for ${gpupixel_libs_name}.framework"
-  )
 endif()
-
-# install library
-install(
-  TARGETS ${gpupixel_libs_name}
-  ARCHIVE DESTINATION lib
-  LIBRARY DESTINATION lib
-  RUNTIME DESTINATION lib # win dll install lib
-  FRAMEWORK DESTINATION lib)
-
-# install image resource
-install(
-  FILES ${lib_image_resource_files}
-  DESTINATION res
-  COMPONENT resource)
-
-# install model resource
-install(
-  FILES ${lib_models_resource_files}
-  DESTINATION models
-  COMPONENT resource)

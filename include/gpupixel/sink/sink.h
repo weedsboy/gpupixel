@@ -7,11 +7,11 @@
 
 #pragma once
 
+#include <iostream>
 #include <map>
 #include "gpupixel/gpupixel_define.h"
-
 namespace gpupixel {
-GPUPIXEL_API enum RotationMode {
+enum GPUPIXEL_API RotationMode {
   NoRotation = 0,
   RotateLeft,
   RotateRight,
@@ -22,7 +22,7 @@ GPUPIXEL_API enum RotationMode {
   Rotate180
 };
 
-// 前向声明
+// Forward declaration
 class GPUPixelFramebuffer;
 
 class GPUPIXEL_API Sink {

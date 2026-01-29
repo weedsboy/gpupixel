@@ -32,15 +32,24 @@ if(APPLE)
                INSTALL_RPATH "@executable_path/../lib"
                BUILD_WITH_INSTALL_RPATH TRUE)
 
-  target_link_libraries(${GPL_APP_NAME} PRIVATE "-framework OpenGL" glad glfw
-                                                dl marsface gpupixel)
+  target_compile_options(${GPL_APP_NAME} PRIVATE "-fno-objc-arc")
+  target_link_libraries(
+    ${GPL_APP_NAME}
+    PRIVATE "-framework OpenGL"
+            dl
+            glad::glad
+            glfw::glfw
+            marsface::marsface
+            gpupixel::gpupixel
+            ghc::filesystem)
 elseif(WIN32)
   # Windows specific configuration Support delayed loading of DLLs for better
   # startup performance
   target_compile_definitions(${GPL_APP_NAME} PRIVATE WINDOWS_DLL_DELAY_LOAD)
 
-  target_link_libraries(${GPL_APP_NAME} PRIVATE glad glfw opengl32 marsface
-                                                gpupixel delayimp)
+  target_link_libraries(
+    ${GPL_APP_NAME} PRIVATE opengl32 delayimp glad::glad glfw::glfw
+                            gpupixel::gpupixel ghc::filesystem)
 
   # set delayed DLL loading
   if(MSVC)
@@ -57,20 +66,32 @@ else()
     ${GPL_APP_NAME} PROPERTIES INSTALL_RPATH "$ORIGIN/../lib"
                                BUILD_WITH_INSTALL_RPATH TRUE)
 
-  target_link_libraries(${GPL_APP_NAME} PRIVATE glad glfw GL dl marsface
-                                                gpupixel)
+  target_link_libraries(
+    ${GPL_APP_NAME}
+    PRIVATE GL
+            dl
+            glad::glad
+            glfw::glfw
+            gpupixel::gpupixel
+            ghc::filesystem
+            stdc++fs)
 endif()
 
 # ---- Installation configuration ----
 # Define where and how files should be installed
-install(
-  TARGETS ${GPL_APP_NAME}
-  ARCHIVE DESTINATION lib
-  LIBRARY DESTINATION lib
-  RUNTIME DESTINATION bin)
+if(GPUPIXEL_INSTALL)
+  install(
+    TARGETS ${GPL_APP_NAME}
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin)
 
-# Install resource files
-install(
-  FILES ${CMAKE_CURRENT_SOURCE_DIR}/desktop/demo.png
-  DESTINATION bin
-  COMPONENT resource)
+  # Install resource files
+  install(
+    FILES ${CMAKE_CURRENT_SOURCE_DIR}/desktop/demo.png
+    DESTINATION bin
+    COMPONENT resource)
+
+  file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/desktop/demo.png
+       DESTINATION ${BUILD_OUTPUT_DIR}/bin)
+endif()

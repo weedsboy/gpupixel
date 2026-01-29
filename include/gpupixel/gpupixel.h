@@ -81,22 +81,15 @@
 namespace gpupixel {
 
 /**
- * GPUPixel工具类：提供资源路径管理功能
+ * GPUPixel Utility Class: Provides resource path management functionality
  */
 class GPUPIXEL_API GPUPixel {
-public:
-    /**
-     * 获取资源路径
-     * @param name 资源名称
-     * @return 资源完整路径
-     */
-    static std::string GetResourcePath(const std::string& name = "");
-
-    /**
-     * 设置资源根目录
-     * @param root 根目录路径
-     */
-    static void SetResourceRoot(const std::string& root);
+ public:
+  /**
+   * Set resource root directory
+   * @param root Root directory path
+   */
+  static void SetResourcePath(const std::string& path);
 };
 
 }  // namespace gpupixel

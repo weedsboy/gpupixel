@@ -21,7 +21,7 @@ If you are creating your own Xcode project, remember to turn off the `Build Sett
 
 ## Mac
 Make sure the MacOS library has been compiled ([reference](build#mac)), open the project in `gpupixel/demo/mac` with Xcode
- 
+
 ::: warning
 If you are creating your own Xcode project, remember to turn off the `Build Settings -> Compress PNG Files -> NO` option, otherwise it will cause image color inversion
 :::
@@ -29,7 +29,7 @@ If you are creating your own Xcode project, remember to turn off the `Build Sett
 ## Android
 
 Copy the generated `gpupixel.aar` to the `demo/android/app/libs` directory, and open the directory `demo/android` with Android Studio
- 
+
 The calling logic is in `MainActivity`, select the app target, connect to the phone and run
 
 ## Desktop
@@ -52,7 +52,7 @@ If not using Windows Terminal, you can configure as follows:
 ::: warning
 Windows only supports generating x86_64 Release version, x86_32 is not supported currently
 :::
- 
+
 **Linux Build Environment Configuration**
 
 ```bash
@@ -76,11 +76,3 @@ After configuring the environment, execute the batch file at the root directory 
 ```
 
 The demo is in the `output/bin` directory
-
-**Keyboard Shortcuts**
-
-After running the demo, use the keyboard to adjust beauty effects, specifically:
-
-`A` `S` `D` `F` `G` `H` - Increase the level of `smoothing`, `whitening`, `slimming`, `enlarging eyes`, `lipstick`, `blush`
-
-`Z` `X` `C` `V` `B` `N` - Decrease the level of `smoothing`, `whitening`, `slimming`, `enlarging eyes`, `lipstick`, `blush`
