@@ -153,7 +153,7 @@ const uint8_t* SinkRawData::GetI420Buffer() {
       [=] { RenderToOutput(); });
 
   // Convert RGBA to I420 format
-  libyuv::ARGBToI420(rgba_buffer_, width_ * 4, yuv_buffer_, width_,
+  libyuv::ABGRToI420(rgba_buffer_, width_ * 4, yuv_buffer_, width_,
                      yuv_buffer_ + width_ * height_, width_ / 2,
                      yuv_buffer_ + width_ * height_ * 5 / 4, width_ / 2, width_,
                      height_);
